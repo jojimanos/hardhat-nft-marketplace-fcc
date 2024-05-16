@@ -3,15 +3,17 @@ pragma solidity ^0.8.7;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-error NftMarketplace_PriceMustBeAboveZero();
+error NftMarketplace__PriceMustBeAboveZero();
 error NftMarketplace__NotApprovedForMarketplace();
+error NftMarketplace__AlreadyListed(address nftAddress, uint256 nftId);
+error NftMarketplace__NotOwner();
 
 contract NftMarketplace {
 
 struct Listing {
     uint256 price;
-    address seller
-};
+    address seller;
+}
 
 event ItemListed(
     address indexed seller,
@@ -27,17 +29,32 @@ event ItemListed(
     ////////Modifiers/////////
     //////////////////////////
     modifier notListed(address nftAddress, uint256 tokenId, address owner) {
-        Listing memory listing = s_listings[ntfAddress][tokenId];
+        Listing memory listing = s_listings[nftAddress][tokenId];
         if(listing.price > 0) {
             revert NftMarketplace__AlreadyListed(nftAddress, tokenId);
         }
+        _;
+    }
+
+    modifier isOwner(address nftAddress, uint256 tokenId, address spender) 
+    {
+        IERC721 nft = IERC721(nftAddress);
+        address owner = nft.ownerOf(tokenId);
+        if (spender != owner) {
+            revert NftMarketplace__NotOwner();
+        }
+        _;
     }
 
     //////////////////////////
     //////Main Function///////
     //////////////////////////
 
-    function listItem(address ntfAddress, uint256 tokenId, uint256 price) external {
+    function listItem(address nftAddress, uint256 tokenId, uint256 price) 
+    external 
+    notListed(nftAddress, tokenId, msg.sender)
+    isOwner(nftAddress, tokenId, msg.sender)
+     {
         if (price <= 0) {
             revert NftMarketplace__PriceMustBeAboveZero();
         }
@@ -47,7 +64,7 @@ event ItemListed(
 
         IERC721 nft = IERC721(nftAddress);
         if (nft.getApproved(tokenId) != address(this)) {
-            revert NftMarketplace__NotApprovedForMarketplace;
+            revert NftMarketplace__NotApprovedForMarketplace();
         }
         s_listings[nftAddress][tokenId] = Listing(price, msg.sender);
         emit ItemListed(msg.sender, nftAddress, tokenId, price);
