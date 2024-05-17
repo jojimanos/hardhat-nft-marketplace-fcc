@@ -7,6 +7,8 @@ error NftMarketplace__PriceMustBeAboveZero();
 error NftMarketplace__NotApprovedForMarketplace();
 error NftMarketplace__AlreadyListed(address nftAddress, uint256 nftId);
 error NftMarketplace__NotOwner();
+error NftMarketplace__NotListed(address nftAddress, uint256 nftId);
+error NftMarketplace__PriceNotMet(address nftAddress, uint256 tokenId, uint256 price);
 
 contract NftMarketplace {
 
@@ -22,8 +24,18 @@ event ItemListed(
     uint256 price
 );
 
+event ItemBought(
+    address indexed buyer,
+    address indexed nftAddress,
+    uint256 indexed tokenId,
+    uint256 price
+    );
+
     // NFT contract address -> NFT TokenId -> Listing
     mapping (address => mapping (uint256 => Listing)) private s_listings;
+
+    // Seller address -> Amount earned
+    mapping (address => uint256) private s_proceeds;
     
     //////////////////////////
     ////////Modifiers/////////
@@ -32,6 +44,14 @@ event ItemListed(
         Listing memory listing = s_listings[nftAddress][tokenId];
         if(listing.price > 0) {
             revert NftMarketplace__AlreadyListed(nftAddress, tokenId);
+        }
+        _;
+    }
+
+    modifier isListed(address nftAddress, uint256 tokenId) {
+        Listing memory listing = s_listings[nftAddress][tokenId];
+        if (listing.price <=0) {
+            revert NftMarketplace__NotListed(nftAddress, tokenId);
         }
         _;
     }
@@ -49,6 +69,15 @@ event ItemListed(
     //////////////////////////
     //////Main Function///////
     //////////////////////////
+
+    /*
+     * @notice Method for listing your NFT to the marketplace
+     * @param nftAddress of the Nft
+     * @param tokenId: The token ID of the NFT
+     * @param price: sale price of the listed NFT
+     * @dev Technicaly we could have the contract be the escrow for the NFTs
+     * but this way people can still hold their NFTs when listed.
+     */ 
 
     function listItem(address nftAddress, uint256 tokenId, uint256 price) 
     external 
@@ -68,6 +97,24 @@ event ItemListed(
         }
         s_listings[nftAddress][tokenId] = Listing(price, msg.sender);
         emit ItemListed(msg.sender, nftAddress, tokenId, price);
+    }
+
+    function buyItem(address nftAddress, uint256 tokenId) 
+    external 
+    payable 
+    
+    isListed(nftAddress, tokenId)
+    {
+        Listing memory listedItem = s_listings[nftAddress][tokenId];
+        if(msg.value < listedItem.price) {
+            revert NftMarketplace__PriceNotMet(nftAddress, tokenId, listedItem.price);
+        }
+        s_proceeds[listedItem.seller] = s_proceeds[listedItem.seller] + msg.value;
+        delete (s_listings[nftAddress][tokenId]);
+        IERC721(nftAddress).safeTransferFrom(listedItem.seller, msg.sender, tokenId);
+        // check to make sure the NFT was transfered
+
+        emit ItemBought(msg.sender, nftAddress, tokenId, listedItem.price);
     }
 }
 
